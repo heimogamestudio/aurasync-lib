@@ -1,0 +1,39 @@
+﻿# Samples folder (already included as Samples~)
+/Samples
+
+# Tests
+/Tests
+/Tests.meta
+
+# Build artifacts
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# Unity3D generated meta files
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+
+# Development and CI files
+/.git
+/.github
+/.gitignore
+/.github
+/.npmignore
+/.npmrc
+/.travis.yml
+/.gitlab-ci.yml
+/node_modules
+/package-lock.json

@@ -1,0 +1,18 @@
+﻿{
+    "name": "Heimo.AuraSync.Editor",
+    "rootNamespace": "Heimo.AuraSync.Editor",
+    "references": [
+        "Heimo.AuraSync"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
