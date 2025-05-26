@@ -4,7 +4,6 @@ using UnityEngine;
 
 #if UNITY_EDITOR
 using UnityEditor;
-#endif
 
 namespace Heimo.AuraSync.Heartbeat
 {
@@ -27,15 +26,16 @@ namespace Heimo.AuraSync.Heartbeat
         /// </summary>
         public static AuraSyncSettings CreateDefault()
         {
-            return new AuraSyncSettings
+            var settings = new AuraSyncSettings
             {
                 User = UnityEditor.CloudProjectSettings.userName,
                 ProjectName = Application.productName,
                 EnableHeartbeats = true
             };
+            
+            return settings;
         }
         
-#if UNITY_EDITOR
         /// <summary>
         /// Retorna as configurações predefinidas
         /// </summary>
@@ -45,6 +45,6 @@ namespace Heimo.AuraSync.Heartbeat
             // Sempre retorna uma instância nova com os valores atualizados (nome do usuário, project, etc)
             return CreateDefault();
         }
-#endif
     }
 }
+#endif

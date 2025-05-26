@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 
+#if UNITY_EDITOR
 namespace Heimo.AuraSync.Heartbeat
 {
     /// <summary>
@@ -37,3 +38,4 @@ namespace Heimo.AuraSync.Heartbeat
         }
     }
 }
+#endif
