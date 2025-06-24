@@ -33,6 +33,7 @@ namespace Heimo.AuraSync.Heartbeat // Mantendo o namespace atual, ajuste se o pa
         public string unity_version; // Versão completa do Unity Editor
         public string os_platform; // Plataforma do S.O. (ex: "Windows", "macOS")
         public string event_details; // Ex: "Compilation started", "Package 'DOTween' imported"
+        public string time_zone_offset; // Offset do fuso horário local
 
         /// <summary>
         /// Converte um objeto Heartbeat interno para a estrutura serializável HeartbeatData.
@@ -59,7 +60,8 @@ namespace Heimo.AuraSync.Heartbeat // Mantendo o namespace atual, ajuste se o pa
                 selected_property_name = heartbeat.SelectedPropertyName,
                 unity_version = heartbeat.UnityVersion,
                 os_platform = heartbeat.OSPlatform,
-                event_details = heartbeat.EventDetails
+                event_details = heartbeat.EventDetails,
+                time_zone_offset = heartbeat.TimeZoneOffset
             };
         }
     }

@@ -44,8 +44,17 @@ namespace Heimo.AuraSync.Heartbeat
         
         public static string ToIso8601String(this DateTime dateTime)
         {
-            return dateTime.ToString("yyyy-MM-ddTHH:mm:ssZ");
-        }  
+            return dateTime.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ");
+        }
+
+        /// <summary>
+        /// Retorna o offset de fuso horário local no formato "+HH:mm" ou "-HH:mm".
+        /// </summary>
+        public static string GetTimeZoneOffsetString()
+        {
+            TimeSpan offset = TimeZoneInfo.Local.GetUtcOffset(DateTime.Now);
+            return (offset < TimeSpan.Zero ? "-" : "+") + offset.ToString(@"hh\:mm");
+        }
     }
 }
 

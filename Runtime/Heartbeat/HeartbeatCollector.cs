@@ -221,7 +221,8 @@ namespace Heimo.AuraSync.Heartbeat
                 EntityType = EntityTypes.Other, // Definir um default, será refinado abaixo
                 UnityVersion = Application.unityVersion,
                 OSPlatform = SystemInfo.operatingSystem,
-                EventDetails = eventDetails
+                EventDetails = eventDetails,
+                TimeZoneOffset = DateTimeExtensions.GetTimeZoneOffsetString()
             };
 
             // Tentar determinar EntityType e EntityRelativePath e EntityFileType
