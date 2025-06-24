@@ -31,6 +31,7 @@ namespace Heimo.AuraSync.Heartbeat
         public string UnityVersion { get; set; } // Versão completa do Unity Editor
         public string OSPlatform { get; set; } // Plataforma do S.O. (ex: "Windows", "macOS")
         public string EventDetails { get; set; } // Ex: "Compilation started", "Package 'DOTween' imported"
+        public string TimeZoneOffset { get; set; } // Offset do fuso horário local
     }
 }
 
