@@ -42,9 +42,13 @@ namespace Heimo.AuraSync.Heartbeat
             return (dateTime.ToUniversalTime() - epoch).TotalSeconds;
         }
         
+        /// <summary>
+        /// Converte DateTime para string ISO 8601 em UTC
+        /// </summary>
         public static string ToIso8601String(this DateTime dateTime)
         {
-            return dateTime.ToString("yyyy-MM-ddTHH:mm:ssZ");
+            // Garante que sempre converte para UTC antes de formatar
+            return dateTime.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
         }  
     }
 }

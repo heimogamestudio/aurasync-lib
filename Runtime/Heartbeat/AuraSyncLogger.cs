@@ -21,7 +21,7 @@ namespace Heimo.AuraSync.Heartbeat
     {
         public void Log(string message)
         {
- #if AURA_SYNC_DEBUG           
+#if AURA_SYNC_DEBUG
             UnityEngine.Debug.Log($"[AuraSync] {message}");
 #endif
         }

@@ -17,8 +17,8 @@ namespace Heimo.AuraSync.Heartbeat
         // Propriedades somente leitura para evitar modificação externa
         public string User { get; private set; } = "";
         public string ProjectName { get; private set; } = "";
-        public string BackendUrl { get; private set; } = "https://dpfxwqivnoaktujaymmq.supabase.co/functions/v1/log";
-        public string ApiKey { get; private set; } = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzQ3ODgyODAwLCJleHAiOjE5MDU2NDkyMDB9.QNBEEcMfhcRjMrXatvSPMUDkUK5cVXNi4PBskykrBLE";
+        public string BackendUrl { get; private set; } = "https://ulgebuochosphlsmfmrz.supabase.co/functions/v1/log";
+        public string ApiKey { get; private set; } = "aurasync_test_key_1234567890";
         public bool EnableHeartbeats { get; private set; } = true;
         
         /// <summary>

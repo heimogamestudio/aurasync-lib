@@ -1,18 +1,21 @@
-﻿#if (UNITY_EDITOR)
+#if (UNITY_EDITOR)
 
 using System;
 using System.IO;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEditor.Compilation;
 using UnityEngine;
-using System.Collections.Generic;
-using System.Linq; // Para usar .FirstOrDefault()
 
 namespace Heimo.AuraSync.Heartbeat
 {
     /// <summary>
-    /// Coleta eventos do Unity Editor e gera heartbeats enriquecidos.
+    /// OPTIMIZED HeartbeatCollector with performance improvements:
+    /// - Debounce on frequent events (2-second cooldown)
+    /// - No more polling all assets (removed InitializeAssetModificationMonitor)
+    /// - Reduced EditorApplication.update overhead
+    /// - Event tags for frontend categorization
     /// </summary>
     public class HeartbeatCollector : IHeartbeatCollector
     {
@@ -20,582 +23,402 @@ namespace Heimo.AuraSync.Heartbeat
 
         private AuraSyncSettings Settings { get; set; }
         private IGitClient GitClient { get; }
-        private IAuraSyncLogger Logger { get; } // Assumindo que IAuraSyncLogger existe
+        private IAuraSyncLogger Logger { get; }
 
-        private float _lastTickTime = 0f;
-        private const float PERIODIC_CHECK_INTERVAL = 60f; // Verificação periódica a cada 60 segundos
-        private Dictionary<string, DateTime> _lastModifiedAssets = new Dictionary<string, DateTime>();
-
-        // Usado para detectar qual janela está ativa
+        // === Performance: Timing ===
+        private const float PERIODIC_CHECK_INTERVAL = 120f; // Increased from 60s to 120s
+        private const float DEBOUNCE_INTERVAL = 2f;         // 2 seconds between same-type events
+        private double _nextPeriodicCheck = 0;
         private EditorWindow _lastActiveWindow;
+        
+        // === Performance: Debounce tracking ===
+        private Dictionary<EventTag, double> _lastEventTime = new Dictionary<EventTag, double>();
+        
+        // === Session tracking ===
+        private bool _sessionStarted = false;
+        private string _cachedBranchName;
+        private double _lastBranchCheck = 0;
+        private const float BRANCH_CHECK_INTERVAL = 300f; // Check git branch every 5 minutes
 
         public HeartbeatCollector(AuraSyncSettings settings, IAuraSyncLogger logger = null)
         {
             Settings = settings;
             Logger = logger;
-
-            GitClient = new GitClient(Logger); // Assumindo GitClient é a implementação concreta
-
-            // Registrar callbacks para os eventos do Editor básico
-            EditorApplication.playModeStateChanged += EditorApplication_PlayModeStateChanged;
-            EditorApplication.contextualPropertyMenu += EditorApplication_ContextualPropertyMenu;
-            EditorApplication.hierarchyChanged += EditorApplication_HierarchyChanged;
-            EditorSceneManager.sceneSaved += EditorSceneManager_SceneSaved;
-            EditorSceneManager.sceneOpened += EditorSceneManager_SceneOpened;
-            EditorSceneManager.sceneClosing += EditorSceneManager_SceneClosing;
-            EditorSceneManager.newSceneCreated += EditorSceneManager_NewSceneCreated;
-
-            // Eventos adicionais para maior cobertura
-            EditorApplication.update += EditorApplication_Update;
-            EditorApplication.projectChanged += EditorApplication_ProjectChanged;
-            Selection.selectionChanged += Selection_SelectionChanged;
-
-            // Eventos de importação de assets
-            AssetDatabase.importPackageStarted += AssetDatabase_ImportPackageStarted;
-            AssetDatabase.importPackageCompleted += AssetDatabase_ImportPackageCompleted;
-            AssetDatabase.importPackageCancelled += AssetDatabase_ImportPackageCancelled;
-            AssetDatabase.importPackageFailed += AssetDatabase_ImportPackageFailed;
-
-            // Eventos de compilação
-            CompilationPipeline.compilationStarted += CompilationPipeline_CompilationStarted;
-            CompilationPipeline.compilationFinished += CompilationPipeline_CompilationFinished;
+            GitClient = new GitClient(Logger);
             
-            // Eventos de Propriedade (Inspector)
-            // Não há um evento nativo para "mudança de propriedade" no Inspector em tempo real.
-            // Precisamos monitorar a seleção e o EditorApplication.update para o Inspector,
-            // ou usar SerializedObject.ApplyModifiedProperties para capturar saves.
-            // Para a menor versão, Selection.selectionChanged é um bom proxy.
+            // Cache initial branch
+            _cachedBranchName = GitClient?.GetBranchName(Application.dataPath) ?? "unknown";
 
-            // Inicializar o monitoramento de modificação de assets
-            InitializeAssetModificationMonitor();
-
-            // Emitir heartbeat de inicialização
-            EmitHeartbeat(CreateHeartbeat("Editor Session Start", HeartbeatCategories.EditorSession));
+            // === Register Editor Callbacks ===
+            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+            EditorApplication.hierarchyChanged += OnHierarchyChanged;
+            EditorApplication.update += OnEditorUpdate;
+            EditorApplication.projectChanged += OnProjectChanged;
+            
+            EditorSceneManager.sceneSaved += OnSceneSaved;
+            EditorSceneManager.sceneOpened += OnSceneOpened;
+            EditorSceneManager.sceneClosing += OnSceneClosing;
+            EditorSceneManager.newSceneCreated += OnNewSceneCreated;
+            
+            Selection.selectionChanged += OnSelectionChanged;
+            
+            // Asset imports
+            AssetDatabase.importPackageCompleted += OnPackageImportCompleted;
+            AssetDatabase.importPackageFailed += OnPackageImportFailed;
+            
+            // Compilation
+            CompilationPipeline.compilationStarted += OnCompilationStarted;
+            CompilationPipeline.compilationFinished += OnCompilationFinished;
+            
+            // Emit session start
+            EmitSessionStart();
         }
 
         public void Dispose()
         {
-            // Remover callbacks ao descartar o coletor
-            EditorApplication.playModeStateChanged -= EditorApplication_PlayModeStateChanged;
-            EditorApplication.contextualPropertyMenu -= EditorApplication_ContextualPropertyMenu;
-            EditorApplication.hierarchyChanged -= EditorApplication_HierarchyChanged;
-            EditorSceneManager.sceneSaved -= EditorSceneManager_SceneSaved;
-            EditorSceneManager.sceneOpened -= EditorSceneManager_SceneOpened;
-            EditorSceneManager.sceneClosing -= EditorSceneManager_SceneClosing;
-            EditorSceneManager.newSceneCreated -= EditorSceneManager_NewSceneCreated;
-
-            // Remover callbacks para os novos eventos
-            EditorApplication.update -= EditorApplication_Update;
-            EditorApplication.projectChanged -= EditorApplication_ProjectChanged;
-            Selection.selectionChanged -= Selection_SelectionChanged;
-
-            AssetDatabase.importPackageStarted -= AssetDatabase_ImportPackageStarted;
-            AssetDatabase.importPackageCompleted -= AssetDatabase_ImportPackageCompleted;
-            AssetDatabase.importPackageCancelled -= AssetDatabase_ImportPackageCancelled;
-            AssetDatabase.importPackageFailed -= AssetDatabase_ImportPackageFailed;
-
-            CompilationPipeline.compilationStarted -= CompilationPipeline_CompilationStarted;
-            CompilationPipeline.compilationFinished -= CompilationPipeline_CompilationFinished;
-
-            // Emitir heartbeat de encerramento de sessão
-            EmitHeartbeat(CreateHeartbeat("Editor Session End", HeartbeatCategories.EditorSession));
+            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+            EditorApplication.hierarchyChanged -= OnHierarchyChanged;
+            EditorApplication.update -= OnEditorUpdate;
+            EditorApplication.projectChanged -= OnProjectChanged;
+            
+            EditorSceneManager.sceneSaved -= OnSceneSaved;
+            EditorSceneManager.sceneOpened -= OnSceneOpened;
+            EditorSceneManager.sceneClosing -= OnSceneClosing;
+            EditorSceneManager.newSceneCreated -= OnNewSceneCreated;
+            
+            Selection.selectionChanged -= OnSelectionChanged;
+            
+            AssetDatabase.importPackageCompleted -= OnPackageImportCompleted;
+            AssetDatabase.importPackageFailed -= OnPackageImportFailed;
+            
+            CompilationPipeline.compilationStarted -= OnCompilationStarted;
+            CompilationPipeline.compilationFinished -= OnCompilationFinished;
+            
+            // Emit session end
+            EmitHeartbeat(CreateHeartbeat("Session End", EventTag.SessionEnd));
         }
 
-        private void EmitHeartbeat(Heartbeat heartbeat)
-        {
-            try
-            {
-                if (heartbeat == null)
-                {
-                    Logger?.LogWarning("Attempted to emit a null heartbeat");
-                    return;
-                }
-                
-                // O logger já é injetado, use-o
-                Logger?.Log($"Heartbeat: {heartbeat.Entity}, Category: {heartbeat.Category.GetDescription()}");
-
-                try
-                {
-                    // Converter para HeartbeatData e emitir o evento
-                    HeartbeatData heartbeatData = HeartbeatData.FromHeartbeat(heartbeat);
-                    OnHeartbeat?.Invoke(this, heartbeatData);
-                }
-                catch (System.Exception ex)
-                {
-                    Logger?.LogWarning($"Failed to emit heartbeat event: {ex.Message}");
-                }
-            }
-            catch (System.Exception ex)
-            {
-                // Capturar qualquer exceção para evitar que erros no sistema de heartbeat
-                // afetem a experiência do usuário com o Unity Editor
-                Logger?.LogWarning($"Error in EmitHeartbeat: {ex.Message}");
-            }
-        }
+        #region Performance: Debounce & Throttle
 
         /// <summary>
-        /// Tenta determinar a entidade primária de um evento.
+        /// Check if enough time has passed since last event of this type.
+        /// Returns true if event should be emitted, false to skip.
         /// </summary>
-        private string GetEntity(UnityEngine.SceneManagement.Scene? scene = null, UnityEngine.Object obj = null)
+        private bool ShouldEmitEvent(EventTag tag, float customDebounce = -1)
         {
-            string entityPath = "Unknown"; // Default
-
-            // Prioriza o objeto selecionado se houver
-            if (obj != null)
+            double now = EditorApplication.timeSinceStartup;
+            float debounce = customDebounce > 0 ? customDebounce : DEBOUNCE_INTERVAL;
+            
+            if (_lastEventTime.TryGetValue(tag, out double lastTime))
             {
-                entityPath = AssetDatabase.GetAssetPath(obj);
-                if (string.IsNullOrEmpty(entityPath))
+                if (now - lastTime < debounce)
                 {
-                    // Se não for um asset (ex: GameObject na cena)
-                    entityPath = $"GameObject: {obj.name}";
-                    if (obj is GameObject go)
-                    {
-                        string fullPath = go.name;
-                        Transform current = go.transform.parent;
-                        while (current != null)
-                        {
-                            fullPath = $"{current.name}/{fullPath}";
-                            current = current.parent;
-                        }
-                        entityPath = $"GameObject Path: {fullPath}";
-                    }
-                }
-            }
-            // Em seguida, a cena ativa
-            else if (scene != null && !string.IsNullOrEmpty(scene.Value.path))
-            {
-                entityPath = scene.Value.path;
-            }
-            // Como fallback, a cena ativa do editor
-            else
-            {
-                var activeScene = EditorSceneManager.GetActiveScene();
-                if (activeScene.IsValid() && !string.IsNullOrEmpty(activeScene.path))
-                {
-                    entityPath = activeScene.path;
-                }
-                else
-                {
-                    entityPath = Application.dataPath; // Representa o projeto
+                    return false; // Too soon, skip
                 }
             }
             
-            // Converte para caminho absoluto para consistência
-            if (entityPath.StartsWith("Assets/"))
-            {
-                return Application.dataPath + entityPath.Substring("Assets".Length);
-            }
-            else if (entityPath.StartsWith("GameObject:"))
-            {
-                // Deixa como está para GameObjects virtuais
-            }
-            else if (entityPath == Application.dataPath)
-            {
-                 // Representa o root do projeto
-            }
-            else if (Path.IsPathRooted(entityPath))
-            {
-                // Já é um caminho absoluto
-            }
-            else if (!string.IsNullOrEmpty(entityPath))
-            {
-                // Tentar um caminho relativo padrão se for apenas um nome de arquivo/pacote
-                return Path.Combine(Application.dataPath, entityPath);
-            }
-
-            return entityPath;
+            _lastEventTime[tag] = now;
+            return true;
         }
 
         /// <summary>
-        /// Cria um objeto Heartbeat preenchendo o máximo de informações possível.
+        /// OPTIMIZED: Only runs actual logic when needed, not every frame
         /// </summary>
-        private Heartbeat CreateHeartbeat(string entity, HeartbeatCategories? category = null, bool isWrite = false, string eventDetails = null)
+        private void OnEditorUpdate()
         {
-
-            Heartbeat heartbeat = new Heartbeat
+            double now = EditorApplication.timeSinceStartup;
+            
+            // Periodic heartbeat (ping)
+            if (now >= _nextPeriodicCheck)
             {
-                Entity = entity,
-                Timestamp = DateTimeExtensions.ToIso8601String(DateTime.Now),
-                IsWrite = isWrite,
-                Category = category ?? (Application.isPlaying ? HeartbeatCategories.Debugging : HeartbeatCategories.Coding),
-                EntityType = EntityTypes.Other, // Definir um default, será refinado abaixo
-                UnityVersion = Application.unityVersion,
-                OSPlatform = SystemInfo.operatingSystem,
-                EventDetails = eventDetails
-            };
-
-            // Tentar determinar EntityType e EntityRelativePath e EntityFileType
-            if (!string.IsNullOrEmpty(entity) && !entity.StartsWith("GameObject:"))
-            {
-                string assetPath = entity;
-                if (entity.StartsWith(Application.dataPath)) // Converte de absoluto para Assets/
-                {
-                    assetPath = "Assets" + entity.Substring(Application.dataPath.Length);
-                }
+                _nextPeriodicCheck = now + PERIODIC_CHECK_INTERVAL;
+                EmitHeartbeat(CreateHeartbeat(Application.productName, EventTag.SessionPing));
                 
-                heartbeat.EntityRelativePath = assetPath;
-                heartbeat.EntityFileType = Path.GetExtension(assetPath)?.ToLowerInvariant().TrimStart('.');
-                
-                // string guid = AssetDatabase.AssetPathToGUID(assetPath);
-                // if (!string.IsNullOrEmpty(guid))
-                // {
-                //     heartbeat.EntityGuid = guid;
-                // }
-
-                // Refinar EntityType com base na extensão ou caminho
-                if (assetPath.EndsWith(".unity")) heartbeat.EntityType = EntityTypes.Scene;
-                else if (assetPath.EndsWith(".prefab")) heartbeat.EntityType = EntityTypes.Prefab;
-                else if (heartbeat.EntityFileType == "cs") heartbeat.EntityType = EntityTypes.File; // Script
-                else if (assetPath.Contains("ScriptableObjects") || heartbeat.EntityFileType == "asset") heartbeat.EntityType = EntityTypes.ScriptableObject; // Pode ser um ScriptableObject
-                else if (assetPath.Contains("Assets/")) heartbeat.EntityType = EntityTypes.Asset; // Um asset genérico
-                else if (Path.GetFileName(assetPath).Contains(".")) // Se tiver extensão, é um arquivo/asset
+                // Also refresh git branch periodically
+                if (now - _lastBranchCheck > BRANCH_CHECK_INTERVAL)
                 {
-                    // Já definido acima.
+                    _lastBranchCheck = now;
+                    _cachedBranchName = GitClient?.GetBranchName(Application.dataPath) ?? _cachedBranchName;
                 }
-                else if (Directory.Exists(entity)) // Se a entidade for uma pasta
-                {
-                    heartbeat.EntityType = EntityTypes.Folder;
-                }
-            }
-            else if (entity.StartsWith("GameObject:")) // Para GameObjects virtuais
-            {
-                heartbeat.EntityType = EntityTypes.GameObject;
-                // Extrair o caminho completo do GameObject se estiver presente
-                if (entity.StartsWith("GameObject Path: "))
-                {
-                    heartbeat.SelectedGameObjectPath = entity.Substring("GameObject Path: ".Length);
-                }
-            }
-
-            // Informações da cena ativa
-            var activeScene = EditorSceneManager.GetActiveScene();
-            if (activeScene.IsValid())
-            {
-                heartbeat.SceneName = activeScene.name;
-            }
-
-            // Tentar obter a janela ativa do editor
-            if (EditorWindow.focusedWindow != null)
-            {
-                heartbeat.ActiveEditorWindow = EditorWindow.focusedWindow.GetType().Name;
             }
             
-            // Preencher branch name
-            if (GitClient != null)
+            // Window focus change (with debounce)
+            if (EditorWindow.focusedWindow != _lastActiveWindow)
             {
-                heartbeat.BranchName = GitClient.GetBranchName(Application.dataPath);
-            }
-
-            // TaskId e TaskName serão preenchidos via integração externa (ClickUp) ou manual
-            // heartbeat.TaskId = Settings.CurrentTaskId; // Exemplo de como viria das configurações
-            // heartbeat.TaskName = Settings.CurrentTaskName; // Exemplo
-
-            return heartbeat;
-        }
-
-        #region Editor Event Handlers (Refatorados)
-
-        private void EditorApplication_ContextualPropertyMenu(GenericMenu menu, SerializedProperty property)
-        {
-            var entity = GetEntity(obj: property.serializedObject.targetObject);
-            // Tentar obter o nome da propriedade para mais contexto
-            var propertyName = property.displayName;
-            var heartbeat = CreateHeartbeat(entity, HeartbeatCategories.InspectorEditing, eventDetails: $"Property Context: {propertyName}");
-            heartbeat.SelectedPropertyName = propertyName; // Preenche o novo campo
-            EmitHeartbeat(heartbeat);
-        }
-
-        private void EditorSceneManager_NewSceneCreated(UnityEngine.SceneManagement.Scene scene, NewSceneSetup setup, NewSceneMode mode)
-        {
-            var entity = GetEntity(scene);
-            var heartbeat = CreateHeartbeat(entity, HeartbeatCategories.SceneEditing, eventDetails: $"New Scene Created: {scene.name}");
-            heartbeat.IsWrite = true; // Criar nova cena é uma escrita
-            EmitHeartbeat(heartbeat);
-        }
-
-        private void EditorSceneManager_SceneClosing(UnityEngine.SceneManagement.Scene scene, bool removingScene)
-        {
-            var entity = GetEntity(scene);
-            var heartbeat = CreateHeartbeat(entity, HeartbeatCategories.SceneEditing, eventDetails: $"Scene Closing: {scene.name}");
-            EmitHeartbeat(heartbeat);
-        }
-
-        private void EditorSceneManager_SceneOpened(UnityEngine.SceneManagement.Scene scene, OpenSceneMode mode)
-        {
-            var entity = GetEntity(scene);
-            var heartbeat = CreateHeartbeat(entity, HeartbeatCategories.SceneEditing, eventDetails: $"Scene Opened: {scene.name}");
-            EmitHeartbeat(heartbeat);
-        }
-
-        private void EditorSceneManager_SceneSaved(UnityEngine.SceneManagement.Scene scene)
-        {
-            var entity = GetEntity(scene);
-            var heartbeat = CreateHeartbeat(entity, HeartbeatCategories.SceneEditing, isWrite: true, eventDetails: $"Scene Saved: {scene.name}");
-            EmitHeartbeat(heartbeat);
-        }
-
-        private void EditorApplication_HierarchyChanged()
-        {
-            // Captura seleção de GameObject
-            if (Selection.activeGameObject != null)
-            {
-                var entity = GetEntity(obj: Selection.activeGameObject);
-                var heartbeat = CreateHeartbeat(entity, HeartbeatCategories.SceneEditing, eventDetails: $"Hierarchy Changed: {Selection.activeGameObject.name}");
-                EmitHeartbeat(heartbeat);
-            }
-            else // Se a hierarquia mudou mas nenhum GameObject está ativo (ex: deletou um objeto)
-            {
-                var entity = GetEntity(); // A cena ativa
-                var heartbeat = CreateHeartbeat(entity, HeartbeatCategories.SceneEditing, eventDetails: "Hierarchy Changed (No Active GameObject)");
-                EmitHeartbeat(heartbeat);
-            }
-        }
-
-        /// <summary>
-        /// Executa uma ação de forma segura com tratamento de erros para evitar que exceções impactem o usuário
-        /// </summary>
-        private void SafeExecute(Action action, string operationName = "operation")
-        {
-            try
-            {
-                action?.Invoke();
-            }
-            catch (System.Exception ex)
-            {
-                // Log silencioso para não incomodar o usuário com erros no sistema de telemetria
-                Logger?.LogWarning($"Error during {operationName}: {ex.Message}");
-            }
-        }
-        
-        private void EditorApplication_PlayModeStateChanged(PlayModeStateChange obj)
-        {
-            SafeExecute(() => 
-            {
-                var entity = GetEntity();
-                HeartbeatCategories category = HeartbeatCategories.Coding; // Default
-
-                string eventDetails = $"Play Mode State Changed: {obj}";
-
-                switch (obj)
+                _lastActiveWindow = EditorWindow.focusedWindow;
+                if (_lastActiveWindow != null && ShouldEmitEvent(EventTag.WindowFocus))
                 {
-                    case PlayModeStateChange.EnteredPlayMode:
-                        category = HeartbeatCategories.Debugging;
-                        break;
-                    case PlayModeStateChange.ExitingPlayMode:
-                        category = HeartbeatCategories.Debugging; // Saindo do modo de debug
-                        break;
-                    case PlayModeStateChange.EnteredEditMode:
-                        category = HeartbeatCategories.Coding; // Retornando à edição
-                        break;
-                    case PlayModeStateChange.ExitingEditMode:
-                        // Sem categoria específica, pode ser preparação para play mode
-                        break;
+                    EmitHeartbeat(CreateHeartbeat(
+                        GetCurrentEntity(), 
+                        EventTag.WindowFocus,
+                        details: _lastActiveWindow.GetType().Name
+                    ));
                 }
-
-                var heartbeat = CreateHeartbeat(entity, category, eventDetails: eventDetails);
-                EmitHeartbeat(heartbeat);
-            }, "PlayModeStateChanged event handling");
+            }
         }
 
         #endregion
 
-        #region Novos e Refatorados Eventos do Editor
+        #region Event Handlers
 
-        private void EditorApplication_Update()
+        private void EmitSessionStart()
         {
-            SafeExecute(() => 
+            if (_sessionStarted) return;
+            _sessionStarted = true;
+            
+            var heartbeat = CreateHeartbeat(Application.productName, EventTag.SessionStart);
+            heartbeat.UnityVersion = Application.unityVersion;
+            heartbeat.OSPlatform = SystemInfo.operatingSystem;
+            EmitHeartbeat(heartbeat);
+        }
+
+        private void OnPlayModeStateChanged(PlayModeStateChange state)
+        {
+            SafeExecute(() =>
             {
-                // Checagem periódica
-                if (Time.realtimeSinceStartup - _lastTickTime > PERIODIC_CHECK_INTERVAL)
+                EventTag tag = state switch
                 {
-                    _lastTickTime = Time.realtimeSinceStartup;
-                    var entity = Application.dataPath; // Representa o projeto em geral para o tick
-                    var heartbeat = CreateHeartbeat(entity, HeartbeatCategories.EditorSession, eventDetails: "Periodic Editor Check");
-                    EmitHeartbeat(heartbeat);
-
-                    // Verificar modificações de arquivos em Assets que o Unity não capturaria
-                    CheckForAssetModifications();
+                    PlayModeStateChange.EnteredPlayMode => EventTag.PlayStart,
+                    PlayModeStateChange.ExitingPlayMode => EventTag.PlayStop,
+                    _ => EventTag.Other
+                };
+                
+                if (tag != EventTag.Other)
+                {
+                    EmitHeartbeat(CreateHeartbeat(GetCurrentEntity(), tag, details: state.ToString()));
                 }
+            });
+        }
 
-                // Monitorar mudança de janela ativa
-                if (EditorWindow.focusedWindow != _lastActiveWindow)
+        private void OnHierarchyChanged()
+        {
+            SafeExecute(() =>
+            {
+                // Debounce: hierarchy changes can be very frequent
+                if (!ShouldEmitEvent(EventTag.HierarchyChange)) return;
+                
+                string entity = Selection.activeGameObject != null 
+                    ? $"GameObject: {Selection.activeGameObject.name}" 
+                    : GetCurrentEntity();
+                    
+                EmitHeartbeat(CreateHeartbeat(entity, EventTag.HierarchyChange, isWrite: true));
+            });
+        }
+
+        private void OnProjectChanged()
+        {
+            SafeExecute(() =>
+            {
+                if (!ShouldEmitEvent(EventTag.AssetModify, 5f)) return; // 5 second debounce
+                EmitHeartbeat(CreateHeartbeat(Application.productName, EventTag.AssetModify, isWrite: true));
+            });
+        }
+
+        private void OnSelectionChanged()
+        {
+            SafeExecute(() =>
+            {
+                if (Selection.activeObject == null) return;
+                if (!ShouldEmitEvent(EventTag.SelectionChange)) return;
+                
+                string assetPath = AssetDatabase.GetAssetPath(Selection.activeObject);
+                EventTag tag = EventTag.SelectionChange;
+                
+                // Determine more specific tag based on selection
+                if (!string.IsNullOrEmpty(assetPath))
                 {
-                    _lastActiveWindow = EditorWindow.focusedWindow;
-                    if (_lastActiveWindow != null)
+                    if (assetPath.EndsWith(".cs"))
                     {
-                        var entity = GetEntity(); // Entidade base
-                        var heartbeat = CreateHeartbeat(entity, HeartbeatCategories.EditorSession, eventDetails: $"Active Window: {_lastActiveWindow.GetType().Name}");
-                        EmitHeartbeat(heartbeat);
+                        tag = EventTag.CodeEdit;
+                    }
+                    else if (assetPath.EndsWith(".unity"))
+                    {
+                        tag = EventTag.SceneOpen;
                     }
                 }
-            }, "EditorUpdate event handling");
-        }
-        
-        private void InitializeAssetModificationMonitor()
-        {
-            _lastModifiedAssets.Clear();
-            string[] allAssetPaths = AssetDatabase.GetAllAssetPaths();
-            foreach (string path in allAssetPaths)
-            {
-                if (File.Exists(path) && !path.StartsWith("Packages/") && !path.StartsWith("Library/")) // Evita assets de pacotes/externos
+                else if (Selection.activeGameObject != null)
                 {
-                    _lastModifiedAssets[path] = File.GetLastWriteTime(path);
+                    tag = EventTag.HierarchyChange;
                 }
+                
+                EmitHeartbeat(CreateHeartbeat(
+                    assetPath ?? $"GameObject: {Selection.activeObject.name}",
+                    tag,
+                    details: Selection.activeObject.name
+                ));
+            });
+        }
+
+        private void OnSceneSaved(UnityEngine.SceneManagement.Scene scene)
+        {
+            SafeExecute(() =>
+            {
+                EmitHeartbeat(CreateHeartbeat(scene.path, EventTag.SceneSave, isWrite: true, details: scene.name));
+            });
+        }
+
+        private void OnSceneOpened(UnityEngine.SceneManagement.Scene scene, OpenSceneMode mode)
+        {
+            SafeExecute(() =>
+            {
+                EmitHeartbeat(CreateHeartbeat(scene.path, EventTag.SceneOpen, details: scene.name));
+            });
+        }
+
+        private void OnSceneClosing(UnityEngine.SceneManagement.Scene scene, bool removing)
+        {
+            SafeExecute(() =>
+            {
+                EmitHeartbeat(CreateHeartbeat(scene.path, EventTag.SceneClose, details: scene.name));
+            });
+        }
+
+        private void OnNewSceneCreated(UnityEngine.SceneManagement.Scene scene, NewSceneSetup setup, NewSceneMode mode)
+        {
+            SafeExecute(() =>
+            {
+                EmitHeartbeat(CreateHeartbeat(scene.path, EventTag.SceneCreate, isWrite: true, details: scene.name));
+            });
+        }
+
+        private void OnPackageImportCompleted(string packageName)
+        {
+            SafeExecute(() =>
+            {
+                var heartbeat = CreateHeartbeat($"Package: {packageName}", EventTag.PackageImport, details: packageName);
+                heartbeat.EntityType = EntityTypes.Package;
+                EmitHeartbeat(heartbeat);
+            });
+        }
+
+        private void OnPackageImportFailed(string packageName, string error)
+        {
+            SafeExecute(() =>
+            {
+                var heartbeat = CreateHeartbeat($"Package: {packageName}", EventTag.PackageFailed, details: error);
+                heartbeat.EntityType = EntityTypes.Package;
+                EmitHeartbeat(heartbeat);
+            });
+        }
+
+        private void OnCompilationStarted(object context)
+        {
+            SafeExecute(() =>
+            {
+                EmitHeartbeat(CreateHeartbeat(Application.productName, EventTag.CompileStart, details: "Compilation Started"));
+            });
+        }
+
+        private void OnCompilationFinished(object context)
+        {
+            SafeExecute(() =>
+            {
+                EmitHeartbeat(CreateHeartbeat(Application.productName, EventTag.CompileEnd, details: "Compilation Finished"));
+            });
+        }
+
+        #endregion
+
+        #region Heartbeat Creation
+
+        private Heartbeat CreateHeartbeat(string entity, EventTag eventTag, bool isWrite = false, string details = null)
+        {
+            var activeScene = EditorSceneManager.GetActiveScene();
+            string relativePath = GetRelativePath(entity);
+            
+            return new Heartbeat
+            {
+                Entity = entity,
+                EntityRelativePath = relativePath,
+                EntityFileType = GetFileExtension(entity),
+                Timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+                IsWrite = isWrite,
+                BranchName = _cachedBranchName,
+                EventTag = eventTag,
+                Category = GetCategoryFromTag(eventTag),
+                EntityType = GetEntityType(entity),
+                SceneName = activeScene.IsValid() ? activeScene.name : null,
+                ActiveEditorWindow = EditorWindow.focusedWindow?.GetType().Name,
+                EventDetails = details
+            };
+        }
+
+        private void EmitHeartbeat(Heartbeat heartbeat)
+        {
+            if (heartbeat == null) return;
+            
+            try
+            {
+                Logger?.Log($"[{heartbeat.EventTag}] {heartbeat.EventDetails ?? heartbeat.Entity}");
+                OnHeartbeat?.Invoke(this, HeartbeatData.FromHeartbeat(heartbeat));
+            }
+            catch (Exception ex)
+            {
+                Logger?.LogWarning($"Error emitting heartbeat: {ex.Message}");
             }
         }
 
-        private void CheckForAssetModifications()
+        private void SafeExecute(Action action)
         {
-            SafeExecute(() => 
+            try { action?.Invoke(); }
+            catch (Exception ex) { Logger?.LogWarning($"HeartbeatCollector error: {ex.Message}"); }
+        }
+
+        #endregion
+
+        #region Utilities
+
+        private string GetCurrentEntity()
+        {
+            var activeScene = EditorSceneManager.GetActiveScene();
+            return activeScene.IsValid() && !string.IsNullOrEmpty(activeScene.path) 
+                ? activeScene.path 
+                : Application.productName;
+        }
+
+        private string GetRelativePath(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return "";
+            
+            int assetsIndex = path.IndexOf("Assets/", StringComparison.Ordinal);
+            if (assetsIndex >= 0) return path.Substring(assetsIndex);
+            
+            return path;
+        }
+
+        private string GetFileExtension(string path)
+        {
+            if (string.IsNullOrEmpty(path) || path.StartsWith("GameObject:")) return null;
+            return Path.GetExtension(path)?.TrimStart('.').ToLowerInvariant();
+        }
+
+        private EntityTypes GetEntityType(string entity)
+        {
+            if (string.IsNullOrEmpty(entity)) return EntityTypes.Other;
+            if (entity.StartsWith("GameObject:")) return EntityTypes.GameObject;
+            if (entity.StartsWith("Package:")) return EntityTypes.Package;
+            if (entity.EndsWith(".unity")) return EntityTypes.Scene;
+            if (entity.EndsWith(".prefab")) return EntityTypes.Prefab;
+            if (entity.EndsWith(".cs")) return EntityTypes.File;
+            if (entity.EndsWith(".asset")) return EntityTypes.ScriptableObject;
+            return EntityTypes.Asset;
+        }
+
+        private HeartbeatCategories GetCategoryFromTag(EventTag tag)
+        {
+            return tag switch
             {
-                // Verifica os assets mais importantes (scripts, cenas, prefabs, etc.)
-                // Esta checagem complementa os eventos nativos do AssetDatabase.
-                // É mais útil para mudanças externas ou salvamentos não capturados pelos eventos AssetDatabase.
-                
-                List<string> modifiedPaths = new List<string>();
-                try
-                {
-                    foreach (var entry in _lastModifiedAssets.ToList()) // ToList para poder modificar o dicionário
-                    {
-                        try 
-                        {
-                            string path = entry.Key;
-                            DateTime lastKnownModTime = entry.Value;
-
-                            if (File.Exists(path))
-                            {
-                                DateTime currentModTime = File.GetLastWriteTime(path);
-                                if (currentModTime > lastKnownModTime)
-                                {
-                                    modifiedPaths.Add(path);
-                                    _lastModifiedAssets[path] = currentModTime; // Atualiza o timestamp conhecido
-                                }
-                            }
-                            else // Arquivo foi deletado
-                            {
-                                modifiedPaths.Add(path); // Ou registrar um evento de delete
-                                _lastModifiedAssets.Remove(path);
-                            }
-                        }
-                        catch (System.IO.IOException ioEx)
-                        {
-                            // Tratar erros de IO de forma silenciosa para não afetar o usuário
-                            Logger?.LogWarning($"IO exception while checking file modifications: {ioEx.Message}");
-                        }
-                        catch (System.UnauthorizedAccessException authEx)
-                        {
-                            // Tratar erros de acesso não autorizado
-                            Logger?.LogWarning($"Access denied while checking file modifications: {authEx.Message}");
-                        }
-                        catch (System.Exception ex)
-                        {
-                            Logger?.LogWarning($"Error checking file modification: {ex.Message}");
-                        }
-                    }
-
-                    foreach (string path in modifiedPaths)
-                    {
-                        var heartbeat = CreateHeartbeat(path, HeartbeatCategories.AssetManagement, isWrite: true, eventDetails: "File System Change Detected");
-                        EmitHeartbeat(heartbeat);
-                    }
-                }
-                catch (System.Exception ex)
-                {
-                    Logger?.LogWarning($"Error in checking asset modifications: {ex.Message}");
-                }
-            }, "Asset modification check");
-        }
-
-        private void EditorApplication_ProjectChanged()
-        {
-            SafeExecute(() => 
-            {
-                var entity = Application.dataPath; // Representa uma mudança geral no projeto (e.g. foco, reimport)
-                var heartbeat = CreateHeartbeat(entity, HeartbeatCategories.AssetManagement, eventDetails: "Project Folder Changed");
-                EmitHeartbeat(heartbeat);
-            }, "ProjectChanged event handling");
-        }
-
-        private void Selection_SelectionChanged()
-        {
-            SafeExecute(() => 
-            {
-                if (Selection.activeObject != null)
-                {
-                    var entity = GetEntity(obj: Selection.activeObject);
-                    HeartbeatCategories category = HeartbeatCategories.ProjectBrowse; // Default para seleção
-                    string eventDetails = $"Selected: {Selection.activeObject.name}";
-
-                    if (Selection.activeObject is GameObject)
-                    {
-                        category = HeartbeatCategories.SceneEditing; // Selecionando GameObject na cena
-                    }
-                    else if (Selection.activeObject is UnityEditor.DefaultAsset && AssetDatabase.IsMainAsset(Selection.activeObject))
-                    {
-                        // Pode ser uma pasta ou um asset que não é script/cena/prefab mas tem um .asset file
-                        string assetPath = AssetDatabase.GetAssetPath(Selection.activeObject);
-                        if (Directory.Exists(assetPath))
-                        {
-                            category = HeartbeatCategories.ProjectBrowse; // Navegando em pasta
-                            eventDetails = $"Selected Folder: {Selection.activeObject.name}";
-                        }
-                        else
-                        {
-                            category = HeartbeatCategories.AssetManagement; // Seleção de asset genérico
-                        }
-                    }
-
-                    var heartbeat = CreateHeartbeat(entity, category, eventDetails: eventDetails);
-                    EmitHeartbeat(heartbeat);
-                }
-                // Se nada estiver selecionado, não emita um heartbeat específico aqui para evitar spam
-            }, "SelectionChanged event handling");
-        }
-
-        private void AssetDatabase_ImportPackageStarted(string packageName)
-        {
-            SafeExecute(() => 
-            {
-                var heartbeat = CreateHeartbeat($"Package: {packageName}", HeartbeatCategories.AssetManagement, eventDetails: $"Import Package Started: {packageName}");
-                heartbeat.EntityType = EntityTypes.Package;
-                EmitHeartbeat(heartbeat);
-            }, "ImportPackageStarted event handling");
-        }
-
-        private void AssetDatabase_ImportPackageCompleted(string packageName)
-        {
-            var heartbeat = CreateHeartbeat($"Package: {packageName}", HeartbeatCategories.AssetManagement, eventDetails: $"Package Import Completed: {packageName}");
-            heartbeat.EntityType = EntityTypes.Package;
-            EmitHeartbeat(heartbeat);
-        }
-
-        private void AssetDatabase_ImportPackageCancelled(string packageName)
-        {
-            var heartbeat = CreateHeartbeat($"Package: {packageName}", HeartbeatCategories.AssetManagement, eventDetails: $"Package Import Cancelled: {packageName}");
-            heartbeat.EntityType = EntityTypes.Package;
-            EmitHeartbeat(heartbeat);
-        }
-
-        private void AssetDatabase_ImportPackageFailed(string packageName, string errorMessage)
-        {
-            var heartbeat = CreateHeartbeat($"Package: {packageName}", HeartbeatCategories.AssetManagement, eventDetails: $"Package Import Failed: {packageName}");
-            heartbeat.EntityType = EntityTypes.Package;
-            EmitHeartbeat(heartbeat);
-            Logger?.LogError($"Package import failed: {packageName} - {errorMessage}");
-        }
-
-        private void CompilationPipeline_CompilationStarted(object context)
-        {
-            var entity = Application.dataPath; // O projeto está compilando
-            var heartbeat = CreateHeartbeat(entity, HeartbeatCategories.Compiling, eventDetails: "Script Compilation Started");
-            EmitHeartbeat(heartbeat);
-        }
-
-        private void CompilationPipeline_CompilationFinished(object context)
-        {
-            var entity = Application.dataPath; // O projeto terminou a compilação
-            var heartbeat = CreateHeartbeat(entity, HeartbeatCategories.Compiling, eventDetails: "Script Compilation Finished");
-            EmitHeartbeat(heartbeat);
+                EventTag.CodeEdit or EventTag.CodeSave => HeartbeatCategories.Coding,
+                EventTag.CompileStart or EventTag.CompileEnd => HeartbeatCategories.Compiling,
+                EventTag.SceneOpen or EventTag.SceneSave or EventTag.SceneCreate or EventTag.SceneClose => HeartbeatCategories.SceneEditing,
+                EventTag.HierarchyChange => HeartbeatCategories.SceneEditing,
+                EventTag.PlayStart or EventTag.PlayStop => HeartbeatCategories.Debugging,
+                EventTag.AssetImport or EventTag.AssetModify or EventTag.PackageImport or EventTag.PackageFailed => HeartbeatCategories.AssetManagement,
+                EventTag.InspectorEdit => HeartbeatCategories.InspectorEditing,
+                EventTag.ProjectBrowse or EventTag.SelectionChange => HeartbeatCategories.ProjectBrowse,
+                EventTag.SessionStart or EventTag.SessionEnd or EventTag.SessionPing or EventTag.WindowFocus => HeartbeatCategories.EditorSession,
+                _ => HeartbeatCategories.Other
+            };
         }
 
         #endregion

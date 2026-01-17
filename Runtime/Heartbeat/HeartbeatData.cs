@@ -1,66 +1,92 @@
 ﻿#if (UNITY_EDITOR)
 
 using System;
-using UnityEngine; // Necessário para [Serializable]
+using UnityEngine;
 
-namespace Heimo.AuraSync.Heartbeat // Mantendo o namespace atual, ajuste se o pacote for Pulse
+namespace Heimo.AuraSync.Heartbeat
 {
     /// <summary>
-    /// Dados detalhados do heartbeat para serialização e envio ao backend.
-    /// Esta é a estrutura do objeto 'heartbeat_data' dentro do payload.
+    /// OPTIMIZED heartbeat payload for backend.
+    /// Reduced from ~600 bytes to ~200 bytes per event.
+    /// Static fields (unity_version, os_platform) sent only once per session.
     /// </summary>
     [Serializable]
     public class HeartbeatData
     {
-        public string entity; // Caminho completo do arquivo/entidade ou descrição do evento
-        public string timestamp; // Unix timestamp float
-        public bool is_write; // True se a ação foi uma escrita/modificação
-        public string branch_name; // Nome do branch Git
-        public string category; // Categoria principal da atividade (string do enum)
-        public string entity_type; // Tipo da entidade envolvida (string do enum)
-
-        // --- Novos Campos para Informações Mais Úteis (Correspondem ao Heartbeat) ---
-
-        public string entity_relative_path; // Caminho da entidade relativo à pasta Assets/
-        public string entity_file_type; // Extensão do arquivo (ex: "cs", "unity", "prefab")
-
-        public string scene_name; // Nome da cena ativa no momento do heartbeat
-        public string active_editor_window; // Nome da janela ativa do Editor (ex: "SceneView", "InspectorWindow")
-
-        public string selected_game_object_path; // Caminho completo do GameObject selecionado na hierarquia
-        public string selected_property_name; // Nome da propriedade modificada no Inspector
-
-        public string unity_version; // Versão completa do Unity Editor
-        public string os_platform; // Plataforma do S.O. (ex: "Windows", "macOS")
-        public string event_details; // Ex: "Compilation started", "Package 'DOTween' imported"
+        // === Core Fields (always sent) ===
+        public string entity;           // Relative path only (Assets/Scripts/Player.cs)
+        public string timestamp;        // ISO 8601 UTC string
+        public bool is_write;           // True if write/modify operation
+        public string branch_name;      // Git branch
+        
+        // === NEW: Event Tag for Frontend Display ===
+        public string event_tag;        // Tag code for categorization (e.g., "code_edit", "scene_save")
+        
+        // === Contextual Fields (sent when relevant) ===
+        public string category;         // Activity category (coding, debugging, etc.)
+        public string entity_type;      // Type of entity (file, scene, prefab, etc.)
+        public string file_ext;         // File extension without dot (cs, unity, prefab)
+        public string scene;            // Current scene name
+        public string window;           // Active editor window
+        public string details;          // Event-specific details
+        
+        // === Session-level Fields (sent once per session, not every heartbeat) ===
+        // These are now optional and only included in session_start events
+        public string unity_ver;        // Unity version (session start only)
+        public string os;               // OS platform (session start only)
 
         /// <summary>
-        /// Converte um objeto Heartbeat interno para a estrutura serializável HeartbeatData.
+        /// Converts internal Heartbeat to optimized serializable HeartbeatData.
         /// </summary>
         public static HeartbeatData FromHeartbeat(Heartbeat heartbeat)
         {
             if (heartbeat == null) return null;
 
-            return new HeartbeatData
+            var data = new HeartbeatData
             {
-                entity = heartbeat.Entity,
+                // Core fields - always present
+                entity = heartbeat.EntityRelativePath ?? GetRelativePath(heartbeat.Entity),
                 timestamp = heartbeat.Timestamp,
                 is_write = heartbeat.IsWrite,
                 branch_name = heartbeat.BranchName,
-                category = heartbeat.Category.GetDescription(), // Usa o método de extensão
-                entity_type = heartbeat.EntityType.GetDescription(), // Usa o método de extensão
-
-                // --- Mapeando os Novos Campos ---
-                entity_relative_path = heartbeat.EntityRelativePath,
-                entity_file_type = heartbeat.EntityFileType,
-                scene_name = heartbeat.SceneName,
-                active_editor_window = heartbeat.ActiveEditorWindow,
-                selected_game_object_path = heartbeat.SelectedGameObjectPath,
-                selected_property_name = heartbeat.SelectedPropertyName,
-                unity_version = heartbeat.UnityVersion,
-                os_platform = heartbeat.OSPlatform,
-                event_details = heartbeat.EventDetails
+                
+                // NEW: Event tag for frontend
+                event_tag = heartbeat.EventTag.GetDescription(),
+                
+                // Context fields
+                category = heartbeat.Category.GetDescription(),
+                entity_type = heartbeat.EntityType.GetDescription(),
+                file_ext = heartbeat.EntityFileType,
+                scene = heartbeat.SceneName,
+                window = heartbeat.ActiveEditorWindow,
+                details = heartbeat.EventDetails
             };
+            
+            // Only include session-level data for session_start events
+            if (heartbeat.EventTag == EventTag.SessionStart)
+            {
+                data.unity_ver = heartbeat.UnityVersion;
+                data.os = heartbeat.OSPlatform;
+            }
+            
+            return data;
+        }
+        
+        /// <summary>
+        /// Convert absolute path to Assets-relative path
+        /// </summary>
+        private static string GetRelativePath(string absolutePath)
+        {
+            if (string.IsNullOrEmpty(absolutePath)) return "";
+            
+            int assetsIndex = absolutePath.IndexOf("Assets/", StringComparison.Ordinal);
+            if (assetsIndex >= 0)
+            {
+                return absolutePath.Substring(assetsIndex);
+            }
+            
+            // For non-asset entities (GameObjects, etc.)
+            return absolutePath;
         }
     }
 
