@@ -31,6 +31,8 @@ namespace Heimo.AuraSync.Heartbeat
             {
                 User = resolvedUser,
                 ProjectName = Application.productName,
+                BackendUrl = ResolveBackendUrl(),
+                ApiKey = ResolveApiKey(),
                 EnableHeartbeats = true
             };
             
@@ -71,6 +73,20 @@ namespace Heimo.AuraSync.Heartbeat
 
             // Final fallback
             return "unknown@local";
+        }
+
+        private static string ResolveBackendUrl()
+        {
+            var envUrl = Sanitize(Environment.GetEnvironmentVariable("AURASYNC_BACKEND_URL"));
+            if (!string.IsNullOrEmpty(envUrl)) return envUrl;
+            return "https://ulgebuochosphlsmfmrz.supabase.co/functions/v1/log";
+        }
+
+        private static string ResolveApiKey()
+        {
+            var envKey = Sanitize(Environment.GetEnvironmentVariable("AURASYNC_API_KEY"));
+            if (!string.IsNullOrEmpty(envKey)) return envKey;
+            return "aurasync_test_key_1234567890";
         }
 
         private static string GetGitEmail()

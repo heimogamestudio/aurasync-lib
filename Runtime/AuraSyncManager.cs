@@ -91,10 +91,14 @@ namespace Heimo.AuraSync
             catch (System.Exception ex)
             {
                 // Falha na inicialização geral
+#if AURA_SYNC_DEBUG
                 Debug.LogWarning($"[AuraSync] Initialization error: {ex.Message}");
+#endif
             }
 #else
+#if AURA_SYNC_DEBUG
             Debug.Log("AuraSync initialized successfully!");
+#endif
 #endif
         }
         

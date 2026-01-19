@@ -79,9 +79,11 @@ namespace Heimo.AuraSync.Heartbeat
                 // Criar o payload completo
                 DevActivityPayload payload = CreatePayload(heartbeatData);
                 string jsonPayload = JsonUtility.ToJson(payload);
-                
+
+#if AURA_SYNC_DEBUG
                 // Log do JSON formatado para melhor legibilidade (somente em modo de depuração)
                 _logger.Log($"JSON a ser enviado: \n{FormatJson(jsonPayload)}");
+#endif
                 
                 using (UnityWebRequest request = new UnityWebRequest(_settings.BackendUrl, "POST"))
                 {
@@ -128,13 +130,13 @@ namespace Heimo.AuraSync.Heartbeat
                             }
                             else
                             {
-                                _logger.LogWarning($"Error sending heartbeat: {request.error}");
+                                _logger.LogWarning($"Error sending heartbeat: {request.error} (status: {request.responseCode})");
                                 _logger.LogWarning($"Response: {request.downloadHandler?.text ?? "No response"}");
                             }
                         }
                         else
                         {
-                            _logger.Log($"Heartbeat sent successfully: {request.downloadHandler.text}");
+                            _logger.Log($"Heartbeat sent successfully: {request.responseCode} {request.downloadHandler.text}");
                         }
                     }
                     catch (System.Exception ex)

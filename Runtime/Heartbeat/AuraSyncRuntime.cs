@@ -34,7 +34,9 @@ namespace Heimo.AuraSync.Heartbeat
         {
             // Esta funcionalidade será implementada em versões futuras
             // para tracking de eventos de gameplay
+#if AURA_SYNC_DEBUG
             Debug.Log($"[AuraSync Runtime] Event: {eventType}, Data: {eventData ?? "none"}");
+#endif
         }
     }
 }
