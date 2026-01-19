@@ -117,17 +117,19 @@ namespace Heimo.AuraSync.Heartbeat
                             await Task.Delay(100);
                             timeoutCounter++;
                             
-                            // Evitar espera infinita em caso de problemas na rede
+                            if (timeoutCounter >= maxTimeout)
+                            {
 #if AURA_SYNC_DEBUG
                                 _logger.LogWarning("Request timeout exceeded. Network may be unavailable.");
 #endif
-                            {
-                                _logger.LogWarning("Request timeout exceeded. Network may be unavailable.");
                                 request.Abort();
                                 break;
                             }
                         }
                         
+                        // Verificar resultado
+                        if (request.result != UnityWebRequest.Result.Success)
+                        {
 #if AURA_SYNC_DEBUG
                             // Tratamento específico para problemas de conectividade
                             if (request.result == UnityWebRequest.Result.ConnectionError)
@@ -139,34 +141,34 @@ namespace Heimo.AuraSync.Heartbeat
                                 _logger.LogWarning($"Error sending heartbeat: {request.error} (status: {request.responseCode})");
                                 _logger.LogWarning($"Response: {request.downloadHandler?.text ?? "No response"}");
                             }
-#endif   _logger.LogWarning($"Error sending heartbeat: {request.error} (status: {request.responseCode})");
-                                _logger.LogWarning($"Response: {request.downloadHandler?.text ?? "No response"}");
-                            }
+#endif
                         }
                         else
                         {
-                            _logger.Log($"Heartbeat sent successfully: {request.responseCode} {request.downloadHandler.text}");
 #if AURA_SYNC_DEBUG
-                        _logger.LogWarning($"Exception during web request: {ex.Message}");
+                            _logger.Log($"Heartbeat sent successfully: {request.responseCode} {request.downloadHandler.text}");
 #endif
+                        }
                     }
                     catch (System.Exception ex)
                     {
+#if AURA_SYNC_DEBUG
                         _logger.LogWarning($"Exception during web request: {ex.Message}");
+#endif
                     }
                     finally
                     {
                         // Garantir que os handlers sejam liberados para evitar vazamentos de memória
                         request.uploadHandler?.Dispose();
-#if AURA_SYNC_DEBUG
-                _logger.LogWarning($"Failed to send heartbeat: {ex.Message}");
-#endif
+                        request.downloadHandler?.Dispose();
                     }
                 }
             }
             catch (System.Exception ex)
             {
+#if AURA_SYNC_DEBUG
                 _logger.LogWarning($"Failed to send heartbeat: {ex.Message}");
+#endif
             }
         }
         
