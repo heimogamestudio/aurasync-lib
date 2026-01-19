@@ -70,12 +70,12 @@ namespace Heimo.AuraSync.Heartbeat
         }
         
         private async Task SendHeartbeatToBackendAsync(HeartbeatData heartbeatData)
+        {
+            if (string.IsNullOrEmpty(_settings.BackendUrl) || string.IsNullOrEmpty(_settings.ApiKey))
+            {
 #if AURA_SYNC_DEBUG
                 _logger.LogWarning("Backend URL or API Key is not configured. Heartbeat not sent.");
 #endif
-            if (string.IsNullOrEmpty(_settings.BackendUrl) || string.IsNullOrEmpty(_settings.ApiKey))
-            {
-                _logger.LogWarning("Backend URL or API Key is not configured. Heartbeat not sent.");
                 return;
             }
             
