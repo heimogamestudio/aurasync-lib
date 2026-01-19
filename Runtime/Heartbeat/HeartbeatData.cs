@@ -26,9 +26,9 @@ namespace Heimo.AuraSync.Heartbeat
         public string category;         // Activity category (coding, debugging, etc.)
         public string entity_type;      // Type of entity (file, scene, prefab, etc.)
         public string file_ext;         // File extension without dot (cs, unity, prefab)
-        public string scene;            // Current scene name
-        public string window;           // Active editor window
-        public string details;          // Event-specific details
+        public string scene;            // Current scene name (renamed from scene_name)
+        public string window;           // Active editor window (renamed from active_editor_window)
+        public string details;          // Event-specific details (renamed from event_details)
         
         // === Session-level Fields (sent once per session, not every heartbeat) ===
         // These are now optional and only included in session_start events

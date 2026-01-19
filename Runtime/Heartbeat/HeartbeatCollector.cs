@@ -374,14 +374,24 @@ namespace Heimo.AuraSync.Heartbeat
             }
             catch (Exception ex)
             {
+#if AURA_SYNC_DEBUG
                 Logger?.LogWarning($"Error emitting heartbeat: {ex.Message}");
+#endif
             }
         }
 
         private void SafeExecute(Action action)
         {
-            try { action?.Invoke(); }
-            catch (Exception ex) { Logger?.LogWarning($"HeartbeatCollector error: {ex.Message}"); }
+            try 
+            { 
+                action?.Invoke(); 
+            }
+            catch (Exception ex) 
+            { 
+#if AURA_SYNC_DEBUG
+                Logger?.LogWarning($"HeartbeatCollector error: {ex.Message}");
+#endif
+            }
         }
 
         #endregion

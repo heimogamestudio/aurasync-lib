@@ -81,8 +81,10 @@ namespace Heimo.AuraSync
                 }
                 catch (System.Exception ex)
                 {
+#if AURA_SYNC_DEBUG
                     // Falha na inicialização dos serviços, mas não impede o Unity de funcionar
                     _logger.LogWarning($"Failed to initialize AuraSync services: {ex.Message}");
+#endif
                 }
                 
                 _initialized = true;
@@ -116,10 +118,12 @@ namespace Heimo.AuraSync
             catch (System.Exception ex)
             {
                 // Não permitir que erros no envio de heartbeats afetem a experiência do usuário
+#if AURA_SYNC_DEBUG
                 if (_logger != null)
                 {
                     _logger.LogWarning($"Failed to send heartbeat: {ex.Message}");
                 }
+#endif
             }
         }
 #endif
