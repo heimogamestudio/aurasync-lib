@@ -28,7 +28,9 @@ namespace Heimo.AuraSync.Heartbeat
         // === Performance: Timing ===
         private const float PERIODIC_CHECK_INTERVAL = 120f; // Increased from 60s to 120s
         private const float DEBOUNCE_INTERVAL = 2f;         // 2 seconds between same-type events
+        private const float INACTIVITY_THRESHOLD = 300f;    // 5 minutes - stop pinging if no activity
         private double _nextPeriodicCheck = 0;
+        private double _lastRealActivity = 0;              // Track last non-ping activity
         private EditorWindow _lastActiveWindow;
         
         // === Performance: Debounce tracking ===
@@ -48,6 +50,9 @@ namespace Heimo.AuraSync.Heartbeat
             
             // Cache initial branch
             _cachedBranchName = GitClient?.GetBranchName(Application.dataPath) ?? "unknown";
+            
+            // Initialize activity tracking
+            _lastRealActivity = EditorApplication.timeSinceStartup;
 
             // === Register Editor Callbacks ===
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
@@ -125,17 +130,28 @@ namespace Heimo.AuraSync.Heartbeat
         /// OPTIMIZED: Only runs actual logic when needed, not every frame
         /// </summary>
         private void OnEditorUpdate()
-        {
-            double now = EditorApplication.timeSinceStartup;
-            
-            // Periodic heartbeat (ping)
+        { - ONLY if there was recent activity
             if (now >= _nextPeriodicCheck)
             {
                 _nextPeriodicCheck = now + PERIODIC_CHECK_INTERVAL;
-                EmitHeartbeat(CreateHeartbeat(Application.productName, EventTag.SessionPing));
+                
+                // Check if developer has been active in the last INACTIVITY_THRESHOLD seconds
+                double timeSinceLastActivity = now - _lastRealActivity;
+                bool isActive = timeSinceLastActivity < INACTIVITY_THRESHOLD;
+                
+                if (isActive)
+                {
+                    // Developer is active, send ping
+                    EmitHeartbeat(CreateHeartbeat(Application.productName, EventTag.SessionPing));
+                }
+                // else: Developer is idle/away, don't send unnecessary pings
+                
+                // Also refresh git branch periodically (only if active)
+                if (isActive && Heartbeat(CreateHeartbeat(Application.productName, EventTag.SessionPing));
                 
                 // Also refresh git branch periodically
-                if (now - _lastBranchCheck > BRANCH_CHECK_INTERVAL)
+                if (_lastRealActivity = now; // Update activity timestamp
+                    now - _lastBranchCheck > BRANCH_CHECK_INTERVAL)
                 {
                     _lastBranchCheck = now;
                     _cachedBranchName = GitClient?.GetBranchName(Application.dataPath) ?? _cachedBranchName;
