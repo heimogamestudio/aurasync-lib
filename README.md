@@ -1,5 +1,11 @@
 ﻿# AuraSync
 
+## 🔗 Related Repositories
+
+**Backend:** [aurasync-backend](https://github.com/heimogamestudio/aurasync-backend) - Supabase backend with edge functions, metrics, and AI insights
+
+---
+
 ## Strategic Overview of AuraSync
 
 AuraSync: A Platform for Development and AI Training.
