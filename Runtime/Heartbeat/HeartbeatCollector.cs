@@ -128,36 +128,35 @@ namespace Heimo.AuraSync.Heartbeat
 
         /// <summary>
         /// OPTIMIZED: Only runs actual logic when needed, not every frame
+        /// Sends session ping only when there was recent activity and refreshes branch name periodically.
         /// </summary>
         private void OnEditorUpdate()
-        { - ONLY if there was recent activity
+        {
+            double now = EditorApplication.timeSinceStartup;
+
             if (now >= _nextPeriodicCheck)
             {
                 _nextPeriodicCheck = now + PERIODIC_CHECK_INTERVAL;
-                
+
                 // Check if developer has been active in the last INACTIVITY_THRESHOLD seconds
                 double timeSinceLastActivity = now - _lastRealActivity;
                 bool isActive = timeSinceLastActivity < INACTIVITY_THRESHOLD;
-                
+
                 if (isActive)
                 {
                     // Developer is active, send ping
                     EmitHeartbeat(CreateHeartbeat(Application.productName, EventTag.SessionPing));
                 }
                 // else: Developer is idle/away, don't send unnecessary pings
-                
-                // Also refresh git branch periodically (only if active)
-                if (isActive && Heartbeat(CreateHeartbeat(Application.productName, EventTag.SessionPing));
-                
-                // Also refresh git branch periodically
-                if (_lastRealActivity = now; // Update activity timestamp
-                    now - _lastBranchCheck > BRANCH_CHECK_INTERVAL)
+
+                // Refresh git branch periodically when active
+                if (isActive && now - _lastBranchCheck > BRANCH_CHECK_INTERVAL)
                 {
                     _lastBranchCheck = now;
                     _cachedBranchName = GitClient?.GetBranchName(Application.dataPath) ?? _cachedBranchName;
                 }
             }
-            
+
             // Window focus change (with debounce)
             if (EditorWindow.focusedWindow != _lastActiveWindow)
             {
@@ -365,6 +364,11 @@ namespace Heimo.AuraSync.Heartbeat
             
             try
             {
+                if (heartbeat.EventTag != EventTag.SessionPing)
+                {
+                    _lastRealActivity = EditorApplication.timeSinceStartup;
+                }
+
                 Logger?.Log($"[{heartbeat.EventTag}] {heartbeat.EventDetails ?? heartbeat.Entity}");
                 OnHeartbeat?.Invoke(this, HeartbeatData.FromHeartbeat(heartbeat));
             }
