@@ -1,136 +1,193 @@
-﻿# AuraSync
+# AuraSync
 
-## 🔗 Related Repositories
+Developer activity tracking and analytics for Unity Editor teams.
 
-**Backend:** [aurasync-backend](https://github.com/heimogamestudio/aurasync-backend) - Supabase backend with edge functions, metrics, and AI insights
+AuraSync is a Unity Editor plugin that captures real-time development events (scene edits, compilations, play mode, asset changes, etc.) and sends them to a cloud backend for team analytics, productivity insights, and AI-powered analysis.
+
+**Related Repositories:**
+- [aurasync-backend](https://github.com/heimogamestudio/aurasync-backend) - Supabase backend with edge functions, metrics, and AI insights
 
 ---
 
-## Strategic Overview of AuraSync
+## Features
 
-AuraSync: A Platform for Development and AI Training.
+- **Automatic activity tracking** - Monitors 15+ Unity Editor events with 24 categorized event tags
+- **Zero configuration** - Auto-detects user identity, project name, and Git branch
+- **Zero runtime impact** - Editor-only code, nothing compiled into game builds
+- **Non-blocking** - Async HTTP transmission, never freezes the editor
+- **Performance optimized** - Event debouncing (2s cooldown), <1% CPU overhead
+- **Git integration** - Automatic branch detection and tracking
+- **Session management** - Automatic session creation with 15-minute inactivity timeout
+- **ClickUp integration** - Task ID extraction from Git branch names
+- **AI insights** - Backend generates session, daily, weekly, burnout, and focus analysis via GPT-4o-mini
 
-AuraSync is a cutting-edge tool and platform developed by Heimo to optimize developer workflows and provide advanced insights. Designed for both internal use and external teams, AuraSync bridges the gap between human creativity and machine learning, enabling seamless collaboration and innovation.
+## Tracked Events
 
-Key benefits of AuraSync include:
+| Group | Events |
+|-------|--------|
+| **Coding** | Script edit, script save, compilation start/end |
+| **Scene** | Scene open/save/create/close, hierarchy changes |
+| **Assets** | Asset import/modify, package import/failed |
+| **Testing** | Play mode enter/exit |
+| **Editor** | Window focus, selection change, inspector edit, project browse |
+| **Session** | Session start/end, periodic ping (every 120s) |
 
-- **Streamlined Workflows**: Enhancing productivity with actionable insights.
-- **AI-Driven Insights**: Leveraging data to refine tools and processes.
-- **Collaboration Enablement**: Supporting teams with shared knowledge and best practices.
+## Requirements
 
-AuraSync is not just a tool; it’s a platform that empowers developers and teams to achieve more, while contributing to the evolution of intelligent systems.
-
-## Objectives of AuraSync (and AuraSync Pulse) Focusing on AI
-
-The objectives are now divided into two interconnected fronts: direct benefits to the developer and strategic benefits for AI training.
-
-### 1. For the Training and Evolution of Heimo's AI:
-
-- **Collect Contextualized Data**: Capture a rich, high-fidelity dataset of human behavior in the Unity Editor (interactions, file types, work categories, tool usage), essential for training Machine Learning models.
-- **Identify Human Development Patterns**: Analyze the heartbeats so that AI can learn about best practices, common challenges, and creative approaches of developers.
-- **Validate and Refine Assistance AIs**: Utilize activity data to evaluate the effectiveness of code copilots, optimizers, and other AI tools being developed or used by Heimo, ensuring alignment with human workflows.
-- **Predict Needs and Automate Tasks**: Develop AI models that can anticipate developer needs (e.g., suggesting code, assets, or workflows) or intelligently automate repetitive tasks based on usage patterns.
-- **Assess Training Effectiveness**: Measure the impact of AI training on developer workflows, creating a continuous feedback loop for improving Heimo's AI tools.
-
-### 2. For the Individual Developer (Through AI):
-
-- **Proactive Assistance**: Provide developers with contextualized code suggestions, optimizations, and problem-solving solutions, powered by AIs trained on the team's own data.
-- **AI-Powered Workflow Optimization**: Help developers identify and mitigate distractions and bottlenecks, with AI-generated insights into their own productivity patterns.
-- **AI-Driven Personalized Learning**: Offer targeted training and resources recommended by AI based on daily activities and challenges, accelerating skill development.
-- **Meaningful Gamified Recognition**: Use AI analysis to generate smarter, more rewarding gamification metrics, celebrating complex contributions and real progress.
-
-This approach positions AuraSync as a fundamental pillar in Heimo's AI strategy, enhancing the tool's value and developer engagement.
-
-> ⭐ **Note**: This package is available as a public repository on GitHub to facilitate installation and use.
+- Unity 2021.3 or later
+- No external dependencies
 
 ## Installation
 
-### Via Git Submodules (Recommended for teams)
-1. Navigate to your Unity project folder
-2. Add the package as a submodule:
-   ```bash
-   git submodule add https://github.com/heimogamestudio/aurasync-lib.git Packages/com.heimo.aurasync
-   git commit -m "Add AuraSync as submodule"
-   ```
-3. When other team members clone the project, they will need to:
-   ```bash
-   git clone --recursive <main-project-url>
-   ```
-   
-   Or if they have already cloned:
-   ```bash
-   git submodule update --init --recursive
-   ```
+### Via Git Submodule (Recommended for teams)
 
-### Via Unity Package Manager (Git URL) 
-1. Open your Unity project
-2. Go to Window > Package Manager
-3. Click the + button in the top-left corner
-4. Select "Add package from git URL..."
-5. Enter `https://github.com/heimogamestudio/aurasync-lib.git#v1.0.0`
-6. Click Add
-
-### Via Local Package
-1. Download the package as a .zip file
-2. Extract it to your desired location
-3. In Unity, go to Window > Package Manager
-4. Click the + button in the top-left corner
-5. Select "Add package from disk..."
-6. Navigate to the extracted package folder and select the package.json file
-
-### Manual Installation (Adding to manifest.json)
-Add this line to your `Packages/manifest.json` file:
-
-```json
-"com.heimo.aurasync": "https://github.com/heimogamestudio/aurasync-lib.git#v1.0.0"
+```bash
+# From your Unity project root
+git submodule add https://github.com/heimogamestudio/aurasync-lib.git Packages/com.heimo.aurasync
+git commit -m "Add AuraSync as submodule"
 ```
 
-For local installation:
+Team members clone with:
+```bash
+git clone --recursive <project-url>
+# Or if already cloned:
+git submodule update --init --recursive
+```
+
+### Via Unity Package Manager (Git URL)
+
+1. Open **Window > Package Manager**
+2. Click **+** > **Add package from git URL...**
+3. Enter: `https://github.com/heimogamestudio/aurasync-lib.git#v1.1.0`
+
+### Via manifest.json
+
+Add to `Packages/manifest.json`:
+```json
+{
+  "dependencies": {
+    "com.heimo.aurasync": "https://github.com/heimogamestudio/aurasync-lib.git#v1.1.0"
+  }
+}
+```
+
+### Via Local Package
 
 ```json
-"com.heimo.aurasync": "file:../path/to/com.heimo.aurasync"
+{
+  "dependencies": {
+    "com.heimo.aurasync": "file:../path/to/com.heimo.aurasync"
+  }
+}
 ```
 
 ## Usage
 
-### Basic Setup
+AuraSync starts automatically when the Unity Editor loads - no manual setup required. It detects your identity, project, and Git branch automatically.
 
-1. After installing the package, access the AuraSync Settings from:
-   ```
-   Tools > Heimo > AuraSync > Settings
-   ```
+### Configuration via Environment Variables
 
-2. Configure your developer details and backend connection:
-   - User ID: Your unique identifier
-   - Developer Name: Your name or nickname
-   - Backend URL: URL of your AuraSync backend
-   - API Key: Authorization key for the backend
+Override defaults by setting environment variables before launching Unity:
 
-3. Click "Save" to apply the settings
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `AURASYNC_USER_EMAIL` | Developer identity | `dev@company.com` |
+| `AURASYNC_BACKEND_URL` | Backend endpoint | `https://your-backend.com/api/pulse/heartbeat` |
+| `AURASYNC_API_KEY` | API authentication key | `your_api_key_here` |
 
-### Developer Activity Tracking
+### User Identity Resolution
 
-AuraSync automatically tracks developer activity in Unity and sends the data to your configured backend. This includes:
+AuraSync resolves the developer identity in this order:
 
-- Scene edits and saves
-- Time spent in Play Mode
-- Hierarchy changes
-- Project and Git branch information
+1. `AURASYNC_USER_EMAIL` / `AURASYNC_USER` / `EMAIL` environment variables
+2. Unity Cloud account (`CloudProjectSettings.userName`)
+3. Git configured email (`git config user.email`)
+4. System username with `@local` suffix
+5. `unknown@local` (final fallback)
 
-For more details, see [Developer Activity Tracking](Documentation/DeveloperActivityTracking.md).
+### Debug Logging
 
-### Programmatic Usage
+To enable verbose logging, add `AURA_SYNC_DEBUG` to Unity's Scripting Define Symbols:
+
+**Project Settings > Player > Other Settings > Scripting Define Symbols**
+
+### Programmatic Access
 
 ```csharp
-// Access the AuraSync manager
-AuraSyncManager manager = AuraSyncManager.Instance;
+#if UNITY_EDITOR
+using Heimo.AuraSync;
 
-// Re-initialize if needed
-manager.Initialize();
+// Force re-initialization
+AuraSyncManager.Initialize();
+
+// Shutdown
+AuraSyncManager.Shutdown();
+#endif
 ```
 
+## Architecture
+
+```
+AuraSyncEditorDetector          [InitializeOnLoad] - auto triggers on editor start
+    |
+    v
+AuraSyncManager                 Static facade - wires components together
+    |
+    +---> HeartbeatCollector     Listens to Unity Editor callbacks, emits events
+    |         |
+    |         v (OnHeartbeat)
+    +---> HeartbeatSender        Queues and sends heartbeats via async HTTP POST
+```
+
+### Key Classes
+
+| Class | Responsibility |
+|-------|---------------|
+| `AuraSyncEditorDetector` | Auto-initialization via `[InitializeOnLoad]` |
+| `AuraSyncManager` | Lifecycle management, wires collector to sender |
+| `HeartbeatCollector` | Captures Unity Editor events with debouncing |
+| `HeartbeatSender` | Async HTTP queue with retry and timeout |
+| `HeartbeatData` | Optimized serializable payload (~200 bytes) |
+| `AuraSyncSettings` | Auto-detected immutable configuration |
+| `EventTags` | 24 event tag definitions with visual metadata |
+| `GitClient` | Git branch detection via CLI |
+
+## Project Structure
+
+```
+Runtime/
+  AuraSyncManager.cs
+  Heimo.AuraSync.asmdef
+  Heartbeat/
+    HeartbeatCollector.cs
+    HeartbeatSender.cs
+    HeartbeatData.cs
+    Heartbeat.cs
+    HeartbeatEnums.cs
+    EventTags.cs
+    AuraSyncSettings.cs
+    AuraSyncLogger.cs
+    Extensions.cs
+    GitClient.cs
+    IHeartbeatCollector.cs
+    AuraSyncRuntime.cs
+    HeartbeatCollectorLegacy.cs  (deprecated)
+Editor/
+  Heimo.AuraSync.Editor.asmdef
+  Heartbeat/
+    AuraSyncEditorDetector.cs
+Tests/
+  Heimo.AuraSync.Tests.asmdef
+```
+
+## Version History
+
+See [CHANGELOG.md](CHANGELOG.md) for detailed version history.
+
 ## License
-[Include license information here]
+
+MIT License - see [LICENSE.md](LICENSE.md) for details.
 
 ## Support
-For questions or support, contact us at contato@heimogames.com.br or visit https://heimogames.com.br
+
+For questions or support, contact us at contato@heimogames.com.br or visit [heimogames.com.br](https://heimogames.com.br).

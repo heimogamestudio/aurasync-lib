@@ -58,49 +58,32 @@ namespace Heimo.AuraSync
                 // Se já inicializado, não faz nada
                 if (_initialized)
                     return;
-                
-                // Carregar configurações predefinidas (não modificáveis pelo usuário)
-                _settings = AuraSyncSettings.CreateDefault();
-                
-                // Inicializar logger
+
+                // Inicializar logger primeiro para poder reportar erros
                 _logger = new DefaultLogger();
                 _logger.Log("AuraSync initializing...");
-                
-                try
-                {
-                    // Inicializar coletor de heartbeats com as configurações predefinidas
-                    _heartbeatCollector = new HeartbeatCollector(_settings, _logger);
-                    
-                    // Inicializar sender de heartbeats
-                    _heartbeatSender = new HeartbeatSender(_settings, _logger);
-                    
-                    // Registrar callback para lidar com eventos de heartbeat
-                    (_heartbeatCollector as HeartbeatCollector).OnHeartbeat += OnHeartbeatReceived;
-                    
-                    _logger.Log("Heartbeat tracking initialized");
-                }
-                catch (System.Exception ex)
-                {
-#if AURA_SYNC_DEBUG
-                    // Falha na inicialização dos serviços, mas não impede o Unity de funcionar
-                    _logger.LogWarning($"Failed to initialize AuraSync services: {ex.Message}");
-#endif
-                }
-                
+
+                // Carregar configurações predefinidas (não modificáveis pelo usuário)
+                _settings = AuraSyncSettings.CreateDefault();
+                _logger.Log($"Backend URL: {_settings.BackendUrl}");
+                _logger.Log($"User: {_settings.User}");
+
+                // Inicializar coletor de heartbeats com as configurações predefinidas
+                _heartbeatCollector = new HeartbeatCollector(_settings, _logger);
+
+                // Inicializar sender de heartbeats
+                _heartbeatSender = new HeartbeatSender(_settings, _logger);
+
+                // Registrar callback para lidar com eventos de heartbeat
+                (_heartbeatCollector as HeartbeatCollector).OnHeartbeat += OnHeartbeatReceived;
+
                 _initialized = true;
                 _logger.Log("AuraSync initialized successfully!");
             }
             catch (System.Exception ex)
             {
-                // Falha na inicialização geral
-#if AURA_SYNC_DEBUG
-                Debug.LogWarning($"[AuraSync] Initialization error: {ex.Message}");
-#endif
+                _logger?.LogError($"Initialization error: {ex.Message}");
             }
-#else
-#if AURA_SYNC_DEBUG
-            Debug.Log("AuraSync initialized successfully!");
-#endif
 #endif
         }
         
@@ -112,18 +95,11 @@ namespace Heimo.AuraSync
         {
             try
             {
-                // Enviar o heartbeat para o backend
                 _heartbeatSender?.SendHeartbeat(heartbeatData);
             }
             catch (System.Exception ex)
             {
-                // Não permitir que erros no envio de heartbeats afetem a experiência do usuário
-#if AURA_SYNC_DEBUG
-                if (_logger != null)
-                {
-                    _logger.LogWarning($"Failed to send heartbeat: {ex.Message}");
-                }
-#endif
+                _logger?.LogWarning($"Failed to send heartbeat: {ex.Message}");
             }
         }
 #endif

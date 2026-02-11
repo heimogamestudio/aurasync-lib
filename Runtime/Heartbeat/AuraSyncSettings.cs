@@ -14,11 +14,16 @@ namespace Heimo.AuraSync.Heartbeat
     [Serializable]
     public class AuraSyncSettings
     {
+        private const string DefaultBackendUrl = "https://web-production-6f5bc.up.railway.app/api/pulse/heartbeat";
+        private const string DefaultApiKey = "EZ96C7VQA4FFNzumwjIpvby7cWYqRXlK";
+        private const string DefaultOrganizationId = "7OmJOSlFwFc37QisZiGSjPX6QwgHE0A7";
+
         // Propriedades somente leitura para evitar modificação externa
         public string User { get; private set; } = "";
         public string ProjectName { get; private set; } = "";
-        public string BackendUrl { get; private set; } = "https://ulgebuochosphlsmfmrz.supabase.co/functions/v1/log";
-        public string ApiKey { get; private set; } = "aurasync_test_key_1234567890";
+        public string BackendUrl { get; private set; } = DefaultBackendUrl;
+        public string ApiKey { get; private set; } = DefaultApiKey;
+        public string OrganizationId { get; private set; } = DefaultOrganizationId;
         public bool EnableHeartbeats { get; private set; } = true;
         
         /// <summary>
@@ -33,6 +38,7 @@ namespace Heimo.AuraSync.Heartbeat
                 ProjectName = Application.productName,
                 BackendUrl = ResolveBackendUrl(),
                 ApiKey = ResolveApiKey(),
+                OrganizationId = ResolveOrganizationId(),
                 EnableHeartbeats = true
             };
             
@@ -79,14 +85,21 @@ namespace Heimo.AuraSync.Heartbeat
         {
             var envUrl = Sanitize(Environment.GetEnvironmentVariable("AURASYNC_BACKEND_URL"));
             if (!string.IsNullOrEmpty(envUrl)) return envUrl;
-            return "https://ulgebuochosphlsmfmrz.supabase.co/functions/v1/log";
+            return DefaultBackendUrl;
         }
 
         private static string ResolveApiKey()
         {
             var envKey = Sanitize(Environment.GetEnvironmentVariable("AURASYNC_API_KEY"));
             if (!string.IsNullOrEmpty(envKey)) return envKey;
-            return "aurasync_test_key_1234567890";
+            return DefaultApiKey;
+        }
+
+        private static string ResolveOrganizationId()
+        {
+            var envOrgId = Sanitize(Environment.GetEnvironmentVariable("AURASYNC_ORGANIZATION_ID"));
+            if (!string.IsNullOrEmpty(envOrgId)) return envOrgId;
+            return DefaultOrganizationId;
         }
 
         private static string GetGitEmail()
